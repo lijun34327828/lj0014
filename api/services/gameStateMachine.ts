@@ -125,9 +125,11 @@ export function handleNoteHit(
 
   if (!targetNoteId) {
     const nearest = findNearestNote(track, session.currentTime, session.pendingNotes);
-    if (nearest) {
-      targetNoteId = nearest.id;
-      targetNote = session.pendingNotes.find(n => n.id === nearest.id);
+    const nearestByClientTs = findNearestNote(track, timestamp, session.pendingNotes);
+    const useNearest = nearestByClientTs || nearest;
+    if (useNearest) {
+      targetNoteId = useNearest.id;
+      targetNote = session.pendingNotes.find(n => n.id === useNearest.id);
     }
   } else {
     targetNote = session.pendingNotes.find(n => n.id === targetNoteId);
@@ -151,6 +153,7 @@ export function handleNoteHit(
   }
 
   const judgementResult = judgeNote(targetNote.hitTime, timestamp);
+
   return processJudgement(session, targetNote, judgementResult.judgement);
 }
 

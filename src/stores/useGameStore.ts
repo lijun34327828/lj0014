@@ -46,6 +46,9 @@ interface GameState {
   isConnected: boolean;
   ws: WebSocket | null;
   pendingSessionId: string | null;
+  sessionStartWallTime: number;
+  accumulatedPauseMs: number;
+  pauseStartWallTime: number;
 
   setWs: (ws: WebSocket | null) => void;
   setSongs: (songs: Song[]) => void;
@@ -60,6 +63,8 @@ interface GameState {
   clearJudgementEffects: () => void;
   resetGame: () => void;
   reconnect: (sessionId: string) => void;
+  getLocalGameTime: () => number;
+  tickLocalTime: () => void;
 }
 
 const initialState = {
@@ -90,6 +95,9 @@ const initialState = {
   isConnected: false,
   ws: null,
   pendingSessionId: null,
+  sessionStartWallTime: 0,
+  accumulatedPauseMs: 0,
+  pauseStartWallTime: 0,
 };
 
 export const useGameStore = create<GameState>((set, get) => ({
@@ -101,11 +109,28 @@ export const useGameStore = create<GameState>((set, get) => ({
 
   setUserProgress: (progress) => set({ userProgress: progress }),
 
+  getLocalGameTime: () => {
+    const state = get();
+    if (state.sessionStartWallTime === 0) return state.currentTime;
+    if (state.status === 'paused') return state.currentTime;
+    return Date.now() - state.sessionStartWallTime - state.accumulatedPauseMs;
+  },
+
+  tickLocalTime: () => {
+    const state = get();
+    if (state.status !== 'playing') return;
+    const t = state.getLocalGameTime();
+    if (Math.abs(t - state.currentTime) >= 1) {
+      set({ currentTime: t });
+    }
+  },
+
   handleServerMessage: (message) => {
     const state = get();
 
     switch (message.type) {
-      case 'GAME_READY':
+      case 'GAME_READY': {
+        const now = Date.now();
         set({
           status: 'playing',
           sessionId: message.sessionId,
@@ -124,11 +149,15 @@ export const useGameStore = create<GameState>((set, get) => ({
           missCount: 0,
           judgementEffects: [],
           gameResult: null,
+          sessionStartWallTime: now,
+          accumulatedPauseMs: 0,
+          pauseStartWallTime: 0,
         });
         if (state.pendingSessionId) {
           set({ pendingSessionId: null });
         }
         break;
+      }
 
       case 'JUDGEMENT_RESULT':
         if (message.judgement !== 'miss') {
@@ -159,7 +188,9 @@ export const useGameStore = create<GameState>((set, get) => ({
         });
         break;
 
-      case 'STATE_UPDATE':
+      case 'STATE_UPDATE': {
+        const now = Date.now();
+        const prevState = get();
         set({
           status: message.state.status,
           score: message.state.score,
@@ -173,7 +204,13 @@ export const useGameStore = create<GameState>((set, get) => ({
           goodCount: message.state.goodCount,
           missCount: message.state.missCount,
         });
+        if (message.state.status === 'playing' && prevState.sessionStartWallTime === 0) {
+          set({
+            sessionStartWallTime: now - message.state.currentTime - prevState.accumulatedPauseMs,
+          });
+        }
         break;
+      }
 
       case 'GAME_END':
         set({
@@ -212,31 +249,48 @@ export const useGameStore = create<GameState>((set, get) => ({
 
   hitNote: (track, noteId) => {
     const state = get();
-    if (!state.ws || state.ws.readyState !== WebSocket.OPEN) return;
-    if (state.status !== 'playing') return;
+    if (!state.ws || state.ws.readyState !== WebSocket.OPEN) {
+      console.error('[GameStore] hitNote failed: WebSocket not connected. readyState=', state.ws?.readyState);
+      return;
+    }
+    if (state.status !== 'playing') {
+      console.warn('[GameStore] hitNote failed: status is not playing, status=', state.status);
+      return;
+    }
 
-    state.ws.send(JSON.stringify({
+    const gameTime = state.getLocalGameTime();
+    const msg = {
       type: 'NOTE_HIT',
       track,
-      timestamp: Date.now() - state.notes[0]?.spawnTime || 0,
+      timestamp: gameTime,
       noteId,
-    }));
+    };
+    state.ws.send(JSON.stringify(msg));
   },
 
   pauseGame: () => {
     const state = get();
     if (!state.ws || state.ws.readyState !== WebSocket.OPEN) return;
+    if (state.status !== 'playing') return;
 
     state.ws.send(JSON.stringify({ type: 'GAME_PAUSE' }));
-    set({ status: 'paused' });
+    const now = Date.now();
+    set({ status: 'paused', pauseStartWallTime: now, currentTime: state.getLocalGameTime() });
   },
 
   resumeGame: () => {
     const state = get();
     if (!state.ws || state.ws.readyState !== WebSocket.OPEN) return;
+    if (state.status !== 'paused') return;
 
+    const now = Date.now();
+    const pauseDur = now - state.pauseStartWallTime;
     state.ws.send(JSON.stringify({ type: 'GAME_RESUME' }));
-    set({ status: 'playing' });
+    set({
+      status: 'playing',
+      accumulatedPauseMs: state.accumulatedPauseMs + pauseDur,
+      pauseStartWallTime: 0,
+    });
   },
 
   quitGame: () => {
@@ -289,6 +343,9 @@ export const useGameStore = create<GameState>((set, get) => ({
       gameResult: null,
       newHighScore: false,
       unlockedSongs: [],
+      sessionStartWallTime: 0,
+      accumulatedPauseMs: 0,
+      pauseStartWallTime: 0,
     });
   },
 

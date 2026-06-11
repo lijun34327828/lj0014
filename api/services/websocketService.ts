@@ -151,6 +151,7 @@ function handleNoteHitMessage(clientId: string, message: ClientMessage & { type:
   );
 
   if ('error' in result) {
+    console.warn(`[WebSocket] NOTE_HIT error (${clientId}): ${result.error}`);
     sendError(client.ws, result.error, 400);
     return;
   }

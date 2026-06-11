@@ -30,10 +30,11 @@ export function GameCanvas({ width, height }: GameCanvasProps) {
   const {
     notes,
     hitNotes,
-    currentTime,
     status,
     judgementEffects,
     clearJudgementEffects,
+    getLocalGameTime,
+    tickLocalTime,
   } = useGameStore();
 
   const trackWidth = width / TRACK_COUNT;
@@ -64,7 +65,7 @@ export function GameCanvas({ width, height }: GameCanvasProps) {
     }
   }, []);
 
-  const drawBackground = useCallback((ctx: CanvasRenderingContext2D) => {
+  const drawBackground = useCallback((ctx: CanvasRenderingContext2D, gameTime: number) => {
     const gradient = ctx.createLinearGradient(0, 0, 0, height);
     gradient.addColorStop(0, '#0a0a1f');
     gradient.addColorStop(0.5, '#0d0d2b');
@@ -74,8 +75,8 @@ export function GameCanvas({ width, height }: GameCanvasProps) {
 
     ctx.globalAlpha = 0.1;
     for (let i = 0; i < 50; i++) {
-      const x = (i * 37 + currentTime * 0.02) % width;
-      const y = (i * 23 + currentTime * 0.01) % height;
+      const x = (i * 37 + gameTime * 0.02) % width;
+      const y = (i * 23 + gameTime * 0.01) % height;
       const size = 1 + (i % 3);
       ctx.fillStyle = '#ffffff';
       ctx.beginPath();
@@ -83,7 +84,7 @@ export function GameCanvas({ width, height }: GameCanvasProps) {
       ctx.fill();
     }
     ctx.globalAlpha = 1;
-  }, [width, height, currentTime]);
+  }, [width, height]);
 
   const drawTracks = useCallback((ctx: CanvasRenderingContext2D) => {
     for (let i = 0; i < TRACK_COUNT; i++) {
@@ -112,8 +113,8 @@ export function GameCanvas({ width, height }: GameCanvasProps) {
     }
   }, [width, height, trackWidth, judgeLineY]);
 
-  const drawJudgeLine = useCallback((ctx: CanvasRenderingContext2D) => {
-    const pulseIntensity = 0.5 + 0.5 * Math.sin(currentTime * 0.01);
+  const drawJudgeLine = useCallback((ctx: CanvasRenderingContext2D, gameTime: number) => {
+    const pulseIntensity = 0.5 + 0.5 * Math.sin(gameTime * 0.01);
 
     ctx.shadowColor = '#ffffff';
     ctx.shadowBlur = 20 * pulseIntensity;
@@ -136,7 +137,7 @@ export function GameCanvas({ width, height }: GameCanvasProps) {
       ctx.fill();
       ctx.shadowBlur = 0;
     }
-  }, [width, judgeLineY, trackWidth, currentTime]);
+  }, [width, judgeLineY, trackWidth]);
 
   const drawNote = useCallback((ctx: CanvasRenderingContext2D, note: Note, gameTime: number) => {
     const y = calculateNoteY(note, gameTime);
@@ -242,16 +243,20 @@ export function GameCanvas({ width, height }: GameCanvasProps) {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    let gameTime = currentTime;
+    const gameTime = getLocalGameTime();
+    if (status === 'playing') {
+      tickLocalTime();
+    }
+
     if (status === 'idle' && notes.length > 0) {
       startTimeRef.current = Date.now();
     }
 
     ctx.clearRect(0, 0, width, height);
 
-    drawBackground(ctx);
+    drawBackground(ctx, gameTime);
     drawTracks(ctx);
-    drawJudgeLine(ctx);
+    drawJudgeLine(ctx, gameTime);
 
     notes.forEach((note) => {
       if (!hitNotes.has(note.id)) {
@@ -268,7 +273,6 @@ export function GameCanvas({ width, height }: GameCanvasProps) {
   }, [
     width,
     height,
-    currentTime,
     status,
     notes,
     hitNotes,
@@ -278,6 +282,8 @@ export function GameCanvas({ width, height }: GameCanvasProps) {
     drawNote,
     drawJudgementEffects,
     drawParticles,
+    getLocalGameTime,
+    tickLocalTime,
   ]);
 
   useEffect(() => {

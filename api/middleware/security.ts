@@ -9,7 +9,7 @@ const rateLimitMap = new Map<string, RateLimitEntry>();
 
 const RATE_LIMIT = 100;
 const RATE_WINDOW = 60 * 1000;
-const MAX_HIT_RATE = 30;
+const MAX_HIT_RATE = 80;
 const HIT_WINDOW = 1000;
 
 const hitTimestamps = new Map<string, number[]>();

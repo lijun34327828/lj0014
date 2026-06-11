@@ -7,37 +7,52 @@ const TRACK_KEYS = ['d', 'f', 'j', 'k'];
 export function HitButtons() {
   const hitNote = useGameStore((state) => state.hitNote);
   const status = useGameStore((state) => state.status);
-  const pressedTracks = useRef<Set<number>>(new Set());
+  const pressedKeys = useRef<Set<string>>(new Set());
+  const activePointers = useRef<Map<number, number>>(new Map());
 
   const handleTrackPress = useCallback((track: number) => {
     if (status !== 'playing') return;
-    if (pressedTracks.current.has(track)) return;
-
-    pressedTracks.current.add(track);
+    console.log('[HitButtons] Track pressed:', track);
     hitNote(track);
-
-    setTimeout(() => {
-      pressedTracks.current.delete(track);
-    }, 50);
   }, [hitNote, status]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.repeat) return;
-      const track = TRACK_KEYS.indexOf(e.key.toLowerCase());
-      if (track !== -1) {
-        e.preventDefault();
-        handleTrackPress(track);
-      }
+      const key = e.key.toLowerCase();
+      const track = TRACK_KEYS.indexOf(key);
+      if (track === -1) return;
+      if (pressedKeys.current.has(key)) return;
+
+      pressedKeys.current.add(key);
+      e.preventDefault();
+      console.log('[HitButtons] KeyDown detected:', key, '-> track', track);
+      handleTrackPress(track);
+    };
+
+    const handleKeyUp = (e: KeyboardEvent) => {
+      pressedKeys.current.delete(e.key.toLowerCase());
     };
 
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
   }, [handleTrackPress]);
 
-  const handleTouchStart = (e: React.TouchEvent | React.MouseEvent, track: number) => {
+  const handlePointerDown = (e: React.PointerEvent, track: number) => {
     e.preventDefault();
+    (e.target as Element).setPointerCapture?.(e.pointerId);
+    activePointers.current.set(e.pointerId, track);
+    console.log('[HitButtons] PointerDown track:', track);
     handleTrackPress(track);
+  };
+
+  const handlePointerUp = (e: React.PointerEvent) => {
+    e.preventDefault();
+    activePointers.current.delete(e.pointerId);
   };
 
   return (
@@ -53,15 +68,18 @@ export function HitButtons() {
             select-none
             active:scale-95
             focus:outline-none
+            touch-none
           `}
           style={{
             backgroundColor: `${TRACK_COLORS[track]}33`,
             border: `3px solid ${TRACK_COLORS[track]}`,
             boxShadow: getTrackGlow(track),
-            touchAction: 'manipulation',
+            touchAction: 'none',
           }}
-          onMouseDown={(e) => handleTouchStart(e, track)}
-          onTouchStart={(e) => handleTouchStart(e, track)}
+          onPointerDown={(e) => handlePointerDown(e, track)}
+          onPointerUp={handlePointerUp}
+          onPointerCancel={handlePointerUp}
+          onPointerLeave={handlePointerUp}
         >
           <span
             className="text-2xl font-bold"
